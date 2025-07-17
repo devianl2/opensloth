@@ -29,7 +29,10 @@ def get_current_python_path():
 
 
 def train_on_single_gpu(
-    gpu: int, opensloth_config: OpenSlothConfig, hf_train_args: TrainingArguments
+    gpu: int, 
+    opensloth_config: OpenSlothConfig, 
+    hf_train_args: TrainingArguments,
+    train_on_responses_only_fn=None
 ):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
     from opensloth.opensloth_trainer_setup import setup_model_and_training
@@ -69,6 +72,11 @@ def train_on_single_gpu(
         trainer.add_callback(grad_sync_cb)
     else:
         logger.info("Single GPU training detected, skipping NCCL gradient sync")
+
+    # Apply train_on_responses_only if provided
+    if train_on_responses_only_fn is not None:
+        logger.info("Applying custom train_on_responses_only function")
+        trainer = train_on_responses_only_fn(trainer)
 
     logger.start_timing("actual_training")
     logger.debug(f"Environment: {os.environ}")
@@ -220,6 +228,7 @@ def run_mp_training(
     gpus: list,
     opensloth_config: OpenSlothConfig,
     training_config: TrainingArguments,
+    train_on_responses_only_fn=None,
 ):
     """Handle multi-GPU training using multi-processing."""
     if len(gpus) == 1:
@@ -228,6 +237,7 @@ def run_mp_training(
             gpu=gpus[0],
             opensloth_config=opensloth_config,
             hf_train_args=training_config,
+            train_on_responses_only_fn=train_on_responses_only_fn,
         )
         return
     import multiprocessing as mp
@@ -244,6 +254,7 @@ def run_mp_training(
             kwargs={
                 "opensloth_config": opensloth_config,
                 "hf_train_args": training_config,
+                "train_on_responses_only_fn": train_on_responses_only_fn,
             },
         )
         p.start()
@@ -317,6 +328,7 @@ def train(
     world_size: int = None,
     tmux: str = None,
     y: bool = False,
+    train_on_responses_only_fn=None
 ):
     opensloth_config, training_config = initialize_training_config(config_file)
 
@@ -327,6 +339,7 @@ def train(
             gpu=opensloth_config.devices[rank],
             opensloth_config=opensloth_config,
             hf_train_args=training_config,
+            train_on_responses_only_fn=train_on_responses_only_fn
         )
         return
 
@@ -348,6 +361,7 @@ def train(
                 gpus=opensloth_config.devices,
                 opensloth_config=opensloth_config,
                 training_config=training_config,
+                train_on_responses_only_fn=train_on_responses_only_fn
             )
     else:
         # Single GPU
@@ -356,4 +370,5 @@ def train(
             gpu=opensloth_config.devices[0],
             opensloth_config=opensloth_config,
             hf_train_args=training_config,
+            train_on_responses_only_fn=train_on_responses_only_fn
         )
